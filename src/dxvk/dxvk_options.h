@@ -100,6 +100,9 @@ namespace dxvk {
     /// Enables CUDA interop extensions if available
     bool enableNvCudaInterop = true;
 
+    /// Enable present timing features
+    bool enablePresentTiming = true;
+
     /// Enable descriptor update templates
     bool enableDescriptorUpdateTemplates = env::is32BitHostPlatform();
 
