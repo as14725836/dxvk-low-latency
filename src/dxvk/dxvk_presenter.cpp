@@ -175,6 +175,7 @@ namespace dxvk {
           uint32_t                rectCount,
     const VkRectLayerKHR*         rects) {
     PresenterSync& currSync = m_semaphores.at(m_frameIndex);
+    Rc<FramePacer> pacer = m_framePacer;
 
     uint64_t frameDeadline = 0u;
 
@@ -234,6 +235,14 @@ namespace dxvk {
       }
     }
 
+    if (pacer && pacer->getMode()) {
+      // we don't want to delay the presentation for the low-latency modes
+      // we experimented with this, but it's bad
+      // possibly will be useful though for future custom pacing modes
+      timingInfo.flags = 0;
+      timingInfo.targetTimeDomainPresentStage = m_timingMode.presentStage;
+      timingInfo.targetTime = 0;
+    }
     VkPresentTimingsInfoEXT timingsInfo = { VK_STRUCTURE_TYPE_PRESENT_TIMINGS_INFO_EXT };
     timingsInfo.swapchainCount = 1u;
     timingsInfo.pTimingInfos = &timingInfo;
@@ -263,7 +272,6 @@ namespace dxvk {
     if (m_hasIncrementalPresent && !m_presentRepaint && m_acquireStatus == VK_SUCCESS && rectCount)
       regionInfo.pNext = const_cast<void*>(std::exchange(info.pNext, &regionInfo));
 
-    FramePacer* pacer = dynamic_cast<FramePacer*>(m_latencyTracker.ptr());
     if (pacer) pacer->getFramePacerMode()->setPresentMode(m_presentMode);
 
     VkResult status = m_vkd->vkQueuePresentKHR(
@@ -2020,6 +2028,11 @@ namespace dxvk {
           Logger::err(str::format("Presenter: vkWaitForPresentKHR failed: ", vr));
       }
 
+      // If the pacer is active, we record the present timing timestamps
+      // and don't do any delaying in this thread
+      FramePacer* pacer = dynamic_cast<FramePacer*>(frame.tracker.ptr());
+      bool gotPresentTiming = updatePresentTiming(frame.frameId);
+
       // Signal latency tracker right away to get more accurate
       // measurements if the frame rate limiter is enabled.
       if (frame.tracker)
@@ -2028,7 +2041,7 @@ namespace dxvk {
       // Apply FPS limiter here to align it as closely with scanout as we can,
       // and delay signaling the frame latency event to emulate behaviour of a
       // low refresh rate display as closely as we can.
-      if (updatePresentTiming(frame.frameId) && frame.isTimed)
+      if ((!pacer || !pacer->getMode()) && gotPresentTiming && frame.isTimed)
         waitUntilFrameTargetTime(frame);
       else
         m_fpsLimiter.delay(frame.tracker);
@@ -2059,6 +2072,18 @@ namespace dxvk {
       return VK_NOT_READY;
 
     return vr;
+  }
+
+
+  void Presenter::registerLatencyTracker( const Rc<DxvkLatencyTracker>& tracker ) {
+    // the FramePacer class doesn't store a reference to the Presenter
+    // which is not the case with other DxvkLatencyTracker objects, so
+    // only store FramePacer instances here to prevent cyclic dependencies
+    if (FramePacer* pacerPtr = dynamic_cast<FramePacer*>(tracker.ptr())) {
+      m_framePacer = pacerPtr;
+    } else {
+      m_framePacer = nullptr;
+    }
   }
 
 }

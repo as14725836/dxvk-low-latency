@@ -25,6 +25,7 @@ namespace dxvk {
   using PresenterSurfaceProc = std::function<VkResult (VkSurfaceKHR*)>;
 
   class DxvkDevice;
+  class FramePacer;
 
   /**
    * \brief Presenter description
@@ -342,9 +343,7 @@ namespace dxvk {
      */
     PresenterTimingFeedback queryPresentTiming();
 
-
-    void registerLatencyTracker( const Rc<DxvkLatencyTracker>& tracker )
-      { m_latencyTracker = tracker; }
+    void registerLatencyTracker( const Rc<DxvkLatencyTracker>& tracker );
 
   private:
 
@@ -412,7 +411,7 @@ namespace dxvk {
     std::array<PresenterFrame, FrameQueueSize> m_frameQueue;
 
     uint64_t                    m_lastSignaled = 0u;
-    Rc<DxvkLatencyTracker>      m_latencyTracker;
+    Rc<FramePacer>              m_framePacer;
 
     alignas(CACHE_LINE_SIZE)
     dxvk::mutex                             m_timingMutex;
